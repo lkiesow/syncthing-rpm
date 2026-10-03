@@ -12,13 +12,10 @@ automatically.
 
 ## Installation
 
-Install the repository package for your OS version:
+Install the repository package for EL9/10:
 
 ```sh
-# EL 9
-dnf install https://raw.githubusercontent.com/lkiesow/syncthing-rpm/el9/syncthing-repository-1-1.el9.noarch.rpm
-# EL 10
-dnf install https://raw.githubusercontent.com/lkiesow/syncthing-rpm/el10/syncthing-repository-1-1.el10.noarch.rpm
+dnf install -y "https://raw.githubusercontent.com/lkiesow/syncthing-rpm/el$(rpm -E %rhel)/syncthing-repository-1-1.el$(rpm -E %rhel).noarch.rpm"
 ```
 
 Then install Syncthing:
