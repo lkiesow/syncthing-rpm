@@ -1,0 +1,46 @@
+#!/bin/sh
+
+set -eu
+
+echo "Checking Syncthing"
+
+# Follow the redirect of the latest release which excludes pre-releases
+LATEST="$(
+	curl -sfI 'https://github.com/syncthing/syncthing/releases/latest' \
+		| sed -n 's_^[Ll]ocation: .*/releases/tag/v\([^[:space:]]*\).*$_\1_p'
+	)"
+
+echo "Latest version:  $LATEST"
+
+if ! echo "$LATEST" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+	echo "Unexpected version format. Aborting."
+	exit 1
+fi
+
+PKG="$(
+	grep Version: syncthing.spec \
+		| awk '{print $2}'
+	)"
+
+echo "Package version: $PKG"
+
+if [ "$LATEST" != "$PKG" ]; then
+	# Release assets may still be uploading shortly after a release is published
+	for ARCH in amd64 arm64; do
+		URL="https://github.com/syncthing/syncthing/releases/download/v${LATEST}/syncthing_${LATEST}_${ARCH}.deb"
+		if ! curl -sfIL -o /dev/null "$URL"; then
+			echo "Release asset ${URL} not yet available. Trying again later."
+			exit 0
+		fi
+	done
+
+	echo "Updating to ${LATEST}"
+
+	DATE="$(date "+%a %b %d %Y")"
+	USER="Lars Kiesow <lkiesow@uos.de>"
+	sed -i "s/^\(Version: *\)[^ ]*$/\1${LATEST}/" syncthing.spec
+	sed -i "s/^\(Release: *\)[^ ]*$/\11%{?dist}/" syncthing.spec
+	sed -i "s/^%changelog/%changelog\n\* ${DATE} ${USER} - ${LATEST}-1\n- Update to ${LATEST}\n/" syncthing.spec
+
+	git commit syncthing.spec -m "Updating Syncthing to ${LATEST}"
+fi

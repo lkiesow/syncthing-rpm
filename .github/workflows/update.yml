@@ -1,0 +1,39 @@
+name: Auto Update
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: prepare git
+      run: |
+        git config --global user.name "Lars' RPM Bot"
+        git config --global user.email "bot@lkiesow.de"
+
+    - name: prepare github ssh key
+      env:
+        DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+      run: |
+        install -dm 700 ~/.ssh/
+        echo "${DEPLOY_KEY}" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+    # Clone and push via deploy key so that the push triggers the build workflow
+    - name: clone repository
+      run: |
+        git clone -b main --single-branch "git@github.com:lkiesow/syncthing-rpm.git" syncthing-rpm-clone
+
+    - name: update specs
+      working-directory: syncthing-rpm-clone
+      run: |
+        .github/update-syncthing
+
+    - name: push updates
+      working-directory: syncthing-rpm-clone
+      run: |
+        git push origin main
