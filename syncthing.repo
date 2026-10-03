@@ -1,0 +1,6 @@
+[syncthing]
+name = Syncthing el$releasever repository
+baseurl  = https://raw.githubusercontent.com/lkiesow/syncthing-rpm/el$releasever/
+enabled  = 1
+gpgcheck = 1
+gpgkey = https://raw.githubusercontent.com/lkiesow/syncthing-rpm/main/syncthing-rpm.key
