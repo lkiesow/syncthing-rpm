@@ -1,0 +1,130 @@
+name: Build Syncthing RPMs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-syncthing-rpms.yml
+      - syncthing-rpm.key
+      - syncthing.spec
+      - syncthing.sysusers
+
+concurrency:
+  group: syncthing-rpmbuild
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        osversion:
+          - '9'
+          - '10'
+    name: build (el${{ matrix.osversion }})
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/library/almalinux:${{ matrix.osversion }}
+    steps:
+      - name: install tools
+        run: >
+          dnf install -y
+          createrepo
+          'dnf-command(builddep)'
+          git
+          gnupg
+          rpmdevtools
+          rpm-sign
+
+      - name: clone repository
+        uses: actions/checkout@v6
+
+      - name: get version
+        run: |
+          echo "VERSION=$(sed -n 's/^Version: *//p' syncthing.spec)" >> "$GITHUB_ENV"
+
+      - name: prepare git
+        run: |
+          git config --global user.name "Deployment Bot"
+          git config --global user.email "bot@lkiesow.dev"
+
+      - name: prepare gpg
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+        run: |
+          echo "${GPG_KEY}" | gpg --import
+          echo '%_gpg_name F1259BA8B2914EC2E0FEAAB4E3C6DEB8F316C5B0' > ~/.rpmmacros
+
+      - name: prepare build tree
+        run: |
+          rpmdev-setuptree
+
+      - name: install build dependencies
+        run: |
+          dnf builddep -y syncthing.spec
+
+      - name: download sources
+        run: |
+          spectool -g -C . syncthing.spec
+
+      - name: build rpms
+        run: |
+          for arch in x86_64 aarch64; do
+            rpmbuild -bb --target "${arch}" --define "_sourcedir ${PWD}" syncthing.spec
+          done
+
+      - name: switch to repository branch
+        run: |
+          chown root:root .
+          git fetch origin el${{ matrix.osversion }}
+          git checkout el${{ matrix.osversion }}
+
+      - name: sign rpms
+        run: |
+          rpmsign --addsign ~/rpmbuild/RPMS/*/*.rpm
+
+      - name: copy rpms to repository
+        run: |
+          cp -v ~/rpmbuild/RPMS/*/*.rpm .
+
+      - name: add new rpms
+        run: |
+          git add ./*.rpm
+
+      - name: update repository metadata
+        run: |
+          createrepo --update .
+          git add ./repodata/
+
+      - name: commit changes
+        run: |
+          git status
+          RPM="$(ls -1 ~/rpmbuild/RPMS/x86_64/ | tail -n1)"
+          git diff --staged --quiet || git commit -m "Build ${RPM} $(date)"
+
+      - name: push updates
+        run: |
+          git remote -v
+          git push
+
+      - name: set up matrix-msg
+        if: always()
+        uses: lkiesow/matrix-notification@v1
+        with:
+          room: '!gwaqKjZRpCQkpkTVwh:matrix.org'
+          token: ${{ secrets.MATRIX_TOKEN }}
+          tool: true
+
+      - name: send success notification
+        run: |
+          RPM="$(ls -1 ~/rpmbuild/RPMS/x86_64/ | tail -n1)"
+          ~/.local/bin/matrix-msg "Finished building ${RPM} for Syncthing (el${{ matrix.osversion }})"
+
+      - name: send failure notification
+        if: failure()
+        run: |
+          OS="(el${{ matrix.osversion }})"
+          ~/.local/bin/matrix-msg "Building Syncthing ${VERSION} RPMs ${OS} failed"

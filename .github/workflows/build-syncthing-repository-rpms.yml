@@ -1,0 +1,111 @@
+name: Build Syncthing Repository RPMs
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-syncthing-repository-rpms.yml
+      - syncthing-repository.spec
+      - syncthing-rpm.key
+      - syncthing.repo
+
+concurrency:
+  group: syncthing-rpmbuild
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        osversion:
+          - '9'
+          - '10'
+    name: build (el${{ matrix.osversion }})
+    runs-on: ubuntu-latest
+    container:
+      image: docker.io/library/almalinux:${{ matrix.osversion }}
+    steps:
+      - name: install tools
+        run: >
+          dnf install -y
+          createrepo
+          git
+          gnupg
+          rpmdevtools
+          rpm-sign
+
+      - name: clone repository
+        uses: actions/checkout@v6
+
+      - name: prepare git
+        run: |
+          git config --global user.name "Deployment Bot"
+          git config --global user.email "bot@lkiesow.dev"
+
+      - name: prepare gpg
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+        run: |
+          echo "${GPG_KEY}" | gpg --import
+          echo '%_gpg_name F1259BA8B2914EC2E0FEAAB4E3C6DEB8F316C5B0' > ~/.rpmmacros
+
+      - name: prepare build tree
+        run: |
+          rpmdev-setuptree
+
+      - name: build rpm
+        run: |
+          rpmbuild -bb --define "_sourcedir ${PWD}" syncthing-repository.spec
+
+      - name: switch to repository branch
+        run: |
+          chown root:root .
+          git fetch origin el${{ matrix.osversion }}
+          git checkout el${{ matrix.osversion }}
+
+      - name: sign rpms
+        run: |
+          rpmsign --addsign ~/rpmbuild/RPMS/noarch/*.rpm
+
+      - name: copy rpms to repository
+        run: |
+          cp -v ~/rpmbuild/RPMS/noarch/*.rpm .
+
+      - name: add new rpms
+        run: |
+          git add ./*.rpm
+
+      - name: update repository metadata
+        run: |
+          createrepo --update .
+          git add ./repodata/
+
+      - name: commit changes
+        run: |
+          git status
+          RPM="$(ls -1 ~/rpmbuild/RPMS/noarch/ | tail -n1)"
+          git diff --staged --quiet || git commit -m "Build ${RPM} $(date)"
+
+      - name: push updates
+        run: |
+          git remote -v
+          git push
+
+      - name: send notification
+        uses: lkiesow/matrix-notification@v1
+        with:
+          token: ${{ secrets.MATRIX_TOKEN }}
+          room: '!gwaqKjZRpCQkpkTVwh:matrix.org'
+          message: Finished building syncthing-repository (el${{ matrix.osversion }})
+
+      - name: failure notification
+        if: ${{ failure() }}
+        uses: lkiesow/matrix-notification@v1
+        with:
+          token: ${{ secrets.MATRIX_TOKEN }}
+          room: '!gwaqKjZRpCQkpkTVwh:matrix.org'
+          message: Error building syncthing-repository (el${{ matrix.osversion }})
