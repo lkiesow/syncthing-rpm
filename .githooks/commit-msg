@@ -1,0 +1,10 @@
+#!/bin/sh
+
+msg_file="$1"
+
+if grep -q 'Co-Authored-By: .*Claude' "$msg_file"; then
+	echo 'commit-msg: refusing commit — `Co-Authored-By: Claude ...` may not be in the commit message' >&2
+	exit 1
+fi
+
+exit 0
