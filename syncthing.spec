@@ -14,7 +14,7 @@
 
 
 Name:          syncthing
-Version:       2.1.5
+Version:       2.1.6
 Release:       1%{?dist}
 Summary:       Open Source Continuous File Synchronization
 
@@ -121,5 +121,8 @@ fi
 
 
 %changelog
+* Tue Oct 06 2026 Lars Kiesow <lkiesow@uos.de> - 2.1.6-1
+- Update to 2.1.6
+
 * Sat Oct 03 2026 Lars Kiesow <lkiesow@uos.de> - 2.1.5-1
 - Initial build
